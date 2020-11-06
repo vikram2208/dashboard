@@ -55,9 +55,9 @@ def user_signup(request, User):
 def add_new_project(Projects, request_data, User, Task):
     try:
         new_project = Projects(name=request_data.get('name'))
+        new_project.save()
         if request_data.get('tasks'):
             add_all_tasks(request_data['tasks'], User, Task, new_project)
-        new_project.save()
     except IntegrityError as e:
         return JsonResponse({'message': 'Invalid arguments'}, status=400)
     except:
@@ -86,16 +86,28 @@ def add_all_tasks(tasks, User, Task, project_data):
         return JsonResponse({'message': 'Task cannot be added'}, status=500)
 
 
-def update_all_tasks(tasks, User, Task, project_data):
+def update_all_tasks(tasks, User, Task, project_data, response):
     try:
         for task in tasks:
             if Task.objects.filter(id=task.get('id')).first():
-                if task.get('status'):
-                    Task.objects.filter(id=task.get('id')).update(status=task.get('status'))
+                task_status = task.get('status')
+                if task_status:
+                    if task_status == 'not completed' and response['user_type'] == 'manager':
+                        Task.objects.filter(id=task.get('id')).update(status=task_status)
+                    elif response['user_type'] == 'developer':
+                        # if task.get('id')
+                        Task.objects.filter(id=task.get('id')).update(status=task_status)
+                    else:
+                        return JsonResponse({'message': 'Un Authorized task'}, status=401)
+
                 else:
-                    user_data = User.objects.get(id=task['assigned_to'])
-                    Task.objects.filter(id=task.get('id')).update(name=task.get('name'), assigned_to=user_data,
-                                                                  project=project_data)
+                    if response['user_type'] == 'admin':
+                        user_data = User.objects.get(id=task['assigned_to'])
+                        Task.objects.filter(id=task.get('id')).update(name=task.get('name'), assigned_to=user_data,
+                                                                      project=project_data)
+                    else:
+                        return JsonResponse({'message': 'Un Authorized task'}, status=401)
+        return JsonResponse({'message': 'task_updated'})
     except:
         return JsonResponse({'message': 'Task cannot be updated'}, status=500)
 
@@ -107,18 +119,18 @@ def all_project_data(request, Projects):
         response_data = {'project_name': project_details.name, 'tasks': list(project_details.task_set.all().values())}
         return JsonResponse(response_data)
     except:
-        return JsonResponse({'message': 'No project found'}, 400)
+        return JsonResponse({'message': 'No project found'}, status=400)
 
 
-def update_task(Projects, request_data, User, Task):
+def update_task(Projects, request_data, User, Task, response):
     try:
         project_data = Projects.objects.get(id=int(request_data['project']))
-        update_all_tasks(request_data['tasks'], User, Task, project_data)
+        response = update_all_tasks(request_data['tasks'], User, Task, project_data, response)
     except IntegrityError as e:
         return JsonResponse({'message': 'Invalid arguments'}, status=400)
     except:
         return JsonResponse({'message': 'Task cannot be updated'}, status=500)
-    return JsonResponse({'message': 'project updated'})
+    return response
 
 
 def get_task_details(request, Projects, User, Task):
@@ -128,11 +140,14 @@ def get_task_details(request, Projects, User, Task):
     elif request.body.decode('utf-8') == '':
         final_response = JsonResponse({'message': 'Invalid credentials'}, status=400)
     elif request.method == 'POST':
-        request_data = json.loads(request.body)
-        final_response = add_task(Projects, request_data, User, Task)
+        if response['user_type'] == 'manager':
+            request_data = json.loads(request.body)
+            final_response = add_task(Projects, request_data, User, Task)
+        else:
+            final_response = JsonResponse({'message': 'Unauthorized user'}, status=401)
     elif request.method == 'PUT':
         request_data = json.loads(request.body)
-        final_response = update_task(Projects, request_data, User, Task)
+        final_response = update_task(Projects, request_data, User, Task, response)
     else:
         final_response = JsonResponse({'error': 'This method is not supported'})
     return final_response

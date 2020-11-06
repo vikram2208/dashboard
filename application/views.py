@@ -22,11 +22,18 @@ def signup(request):
 
 @csrf_exempt
 def project(request):
-    if request.body.decode('utf-8') == '':
-        return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    response = authenticate_user(request.META['HTTP_AUTHORIZATION'])
+    if response.get('error'):
+        return JsonResponse(response, status=401)
     if request.method == 'POST':
-        request_data = json.loads(request.body)
-        return add_new_project(Projects, request_data, User, Task)
+        if request.body.decode('utf-8') == '':
+            response = JsonResponse({'message': 'Invalid params'}, status=400)
+        if response['user_type'] == 'admin':
+            request_data = json.loads(request.body)
+            response = add_new_project(Projects, request_data, User, Task)
+        else:
+            response = JsonResponse({'message': 'Invalid user'}, status=401)
+        return response
     else:
         return all_project_data(request, Projects)
 
